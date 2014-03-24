@@ -1,6 +1,7 @@
 /**
 *	@filename	Enchant.js
 *	@author		kolton
+*	@modified	frickaline
 *	@desc		Enchant other players, open cow portal and give waypoints on command
 */
 
@@ -13,18 +14,18 @@ function Enchant() {
 	this.enchant = function (nick) {
 		if (!Misc.inMyParty(nick)) {
 			say("Accept party invite, noob.");
-
+			
 			return false;
 		}
 
 		var unit = getUnit(0, nick);
 
-		if (!unit || getDistance(me, unit) > 40) {
+		if (!unit || getDistance(me, unit) > 40 || unit.area != me.area) {
 			say("Get closer.");
 
 			return false;
 		}
-
+		
 		if (unit) {
 			do {
 				if (!unit.dead) { // player is alive
@@ -73,10 +74,12 @@ function Enchant() {
 
 		if (unit) {
 			do {
-				if (unit.getParent() && chanted.indexOf(unit.getParent().name) > -1 && !unit.getState(16) && getDistance(me, unit) <= 40) {
-					Skill.setSkill(52, 0);
-					sendPacket(1, 0x11, 4, unit.type, 4, unit.gid);
-					delay(500);
+				if (unit.getParent()) {
+					if (chanted.indexOf(unit.getParent().name) > -1 && !unit.getState(16) && getDistance(me, unit) <= 40) {
+						Skill.setSkill(52, 0);
+						sendPacket(1, 0x11, 4, unit.type, 4, unit.gid);
+						delay(500);
+					}
 				}
 			} while (unit.getNext());
 		}
@@ -96,7 +99,7 @@ function Enchant() {
 
 			if (leg) {
 				do {
-					if (leg.name.indexOf("ÿc1") > -1) {
+					if (leg.name.indexOf("Ã¿c1") > -1) {
 						wrongLeg = true;
 					} else { // For idiots trying to give leg from another difficulty
 						gid = leg.gid;
@@ -113,11 +116,20 @@ function Enchant() {
 			return false;
 		}
 
+		if (this.checkHostiles()) {
+			return false;
+		}
+		
 		Pather.useWaypoint(4);
 		Precast.doPrecast(true);
 		Pather.moveToPreset(me.area, 1, 737, 8, 8);
 
 		for (i = 0; i < 6; i += 1) {
+		
+			if (this.checkHostiles()) {
+				break;
+			}
+		
 			portal = Pather.getPortal(38);
 
 			if (portal) {
@@ -130,26 +142,39 @@ function Enchant() {
 		}
 
 		if (!portal) {
-			throw new Error("Tristram portal not found");
-		}
+			say("Tristram portal not found");
+			Town.goToTown();
+			return false;
+		} else {
 
-		Pather.moveTo(25048, 5177);
-
-		wirt = getUnit(2, 268);
-
-		for (i = 0; i < 8; i += 1) {
-			wirt.interact();
-			delay(500);
-
-			leg = getUnit(4, 88);
-
-			if (leg) {
-				gid = leg.gid;
-
-				Pickit.pickItem(leg);
+			Pather.moveTo(25048, 5177);
+			delay(200);
+			wirt = getUnit(2, 268);
+			
+			if (!wirt) {
+				say("Wirt not found");
 				Town.goToTown();
+				return false;
+			}
 
-				return me.getItem(-1, -1, gid);
+			for (i = 0; i < 8; i += 1) {
+				if (this.checkHostiles()) {
+					break;
+				}
+			
+				wirt.interact();
+				delay(500);
+				
+				leg = getUnit(4, 88);
+
+				if (leg) {
+					gid = leg.gid;
+
+					Pickit.pickItem(leg);
+					Town.goToTown();
+
+					return me.getItem(-1, -1, gid);
+				}
 			}
 		}
 
@@ -255,12 +280,13 @@ function Enchant() {
 		if (!Town.openStash() || !Cubing.emptyCube() || !Storage.Cube.MoveTo(leg) || !Storage.Cube.MoveTo(tome) || !Cubing.openCube()) {
 			return false;
 		}
-
+		
 		transmute();
 		delay(500);
 
 		for (i = 0; i < 10; i += 1) {
 			if (Pather.getPortal(39)) {
+				Town.move("portalspot");
 				return true;
 			}
 
@@ -268,7 +294,8 @@ function Enchant() {
 		}
 
 		say("Failed to open cow portal.");
-
+		delay(500);
+		Town.move("portalspot");
 		return false;
 	};
 
@@ -287,7 +314,7 @@ function Enchant() {
 
 		return false;
 	};
-
+	
 	this.addWpNick = function (nick) {
 		wpNicks[nick] = {timer: getTickCount(), requests: 0};
 	};
@@ -350,7 +377,14 @@ MainLoop:
 			try {
 				Pather.useWaypoint(wpList[i], true);
 				Pather.makePortal();
-				say(getArea().name + " TP up");
+				var thisName = getArea().name;
+				if (thisName == "Rigid Highlands") {thisName = "Frigid Highlands";}
+				if (thisName === "Crystalized Cavern Level 1") {thisName = "Crystalline Passage";}
+				if (thisName == "Crystalized Cavern Level 2") {thisName = "Glacial Trail";}
+				if (thisName == "Halls of Death's Calling") {thisName = "Halls Of Pain";}
+				if (thisName == "Tundra Wastelands") {thisName = "Frozen Tundra";}
+				if (thisName == "Glacial Caves Level 1") {thisName = "The Ancients' Way";}
+				say(thisName + " TP up");
 
 				for (timeout = 0; timeout < 20; timeout += 1) {
 					if (getUnit(0, nick)) {
@@ -461,7 +495,9 @@ MainLoop:
 			nick  = greet.shift();
 
 			if (shitList.indexOf(nick) === -1) {
-				say("Welcome, " + nick + "! For a list of commands say 'help'");
+				say("Hi there, " + nick + "! Type help to get more information about me.");
+			} else {
+				say(nick + "is shitlisted and will not receive party invitations.");
 			}
 		}
 
@@ -477,13 +513,18 @@ MainLoop:
 				}
 
 				say("Commands:");
-				say((Config.Enchant.Triggers[0] ? "Enhant: " + Config.Enchant.Triggers[0] : "") +
+				say((Config.Enchant.Triggers[0] ? "| Enchant: " + Config.Enchant.Triggers[0] : "") +
 						(Config.Enchant.Triggers[1] ? " | Open cow level: " + Config.Enchant.Triggers[1] : "") +
-							(Config.Enchant.Triggers[2] ? " | Give waypoints: " + Config.Enchant.Triggers[2] : ""));
-
+							(Config.Enchant.Triggers[2] ? " | Give waypoints: " + Config.Enchant.Triggers[2] : "") + " |");
+				delay(1000);
+				say("Ask for waypoints while located in the act you need.");
+				delay(1000);
 				if (Config.Enchant.AutoChant) {
-					say("Auto enchant is ON");
+					say("p.s. Auto enchant is ON");
+					delay(1000);
 				}
+				var time_remaining = Config.Enchant.GameLength - Math.round((getTickCount() - me.gamestarttime )/6e4)
+				say("{ "+ time_remaining+" minute(s) remaining in this game. }");
 
 				break;
 			case Config.Enchant.Triggers[0].toLowerCase(): // chant
@@ -506,7 +547,13 @@ MainLoop:
 
 					break;
 				}
+				
+				if (hostile) {
+					say("Command disabled because of hostiles.");
 
+					break;
+				}
+				
 				this.openPortal(command[1]);
 				me.cancel();
 
@@ -539,8 +586,8 @@ MainLoop:
 		}
 
 		if (getTickCount() - me.gamestarttime >= Config.Enchant.GameLength * 6e4) {
-			say("Use kolbot or die!");
-			delay(1000);
+			say("Next Game in just a few seconds!");
+			delay(5000);
 
 			break;
 		}
